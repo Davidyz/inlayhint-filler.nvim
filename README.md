@@ -22,15 +22,15 @@ functions that takes dozens of arguments_).
 This plugin is developed and tested on the latest stable release of neovim.
 
 Use your favourite plugin manager.
-```lua 
+```lua
 {
     "Davidyz/inlayhint-filler.nvim",
     keys={
         {
             "<Leader>I", -- Use whatever keymap you want.
-            function() 
-                require("inlayhint-filler").fill() 
-            end
+            function()
+                require("inlayhint-filler").fill()
+            end,
             desc = "Insert the inlay-hint under cursor into the buffer."
         }
     }
