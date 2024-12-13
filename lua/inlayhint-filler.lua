@@ -11,7 +11,12 @@ local DEFAULT_OPTS = { bufnr = 0, client_id = nil }
 ---@param original_line string
 ---@return string
 local function make_new_line(hint_item, original_line)
-  local hint_text = hint_item.label[1].value
+  local hint_text
+  if type(hint_item.label) == "string" then
+    hint_text = hint_item.label
+  else
+    hint_text = hint_item.label[1].value
+  end
   local hint_col = hint_item.position.character
   if hint_item.paddingLeft then
     hint_text = " " .. hint_text
