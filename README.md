@@ -1,7 +1,7 @@
 # Inlayhint-filler.nvim 
-> This plugin is so simple that I don't expect frequent changes to the code.
-> Please don't consider this orphaned simply because you see the last commit was a long
-> time ago.
+> This plugin works as long as the neovim inlayhint API doesn't change.
+> Please don't consider this orphaned simply because you see the last commit was made 
+> a long time ago.
 
 For some languages like Python, the inlay-hint provided by the language server
 are actually optional symbols/tokens that can be inserted into the buffer. 
@@ -11,11 +11,6 @@ In Python, this is useful when you want to insert the type annotation from the
 language server into the code, or you want to turn an unnamed argument (`f(10)`)
 into a named argument (`f(x=10)`) (_particularly useful when working with
 functions that takes dozens of arguments_).
-
-> [!NOTE]
-> There's absolutely no reason that this has to be a standalone plugin. It's
-> merely one single function at the moment, and it's totally okay if you just
-> put this somewhere in your config and assign a keymap to it.
 
 ## Installation 
 
@@ -55,3 +50,11 @@ the left parenthesis or on `1`) and call
 the Lua function `require("inlayhint-filler").fill()`, it'll grab the inlay hint
 and convert the virtual text into actual code in the buffer:
 ![](./images/modified.png)
+
+### Language server support
+This plugin is supposed to be language-server-agnostic, but if you encounter any
+issues with a specific language/language server, please open an issue (preferably
+following the issue template for bug report).
+
+## Todo 
+- [ ] implement support for visual selection mode.
