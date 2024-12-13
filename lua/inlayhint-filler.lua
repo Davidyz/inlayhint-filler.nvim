@@ -1,11 +1,16 @@
 M = {}
 
 ---@class InlayHintFillerOpts
----@field bufnr integer
----@field client_id integer|nil
+---@field bufnr integer?
+---@field client_id integer?
+---@field blacklisted_servers string[]?
 
 ---@type InlayHintFillerOpts
-local DEFAULT_OPTS = { bufnr = 0, client_id = nil }
+local DEFAULT_OPTS = { bufnr = 0, client_id = nil, blacklisted_servers = {} }
+---@type InlayHintFillerOpts
+local options = vim.tbl_deep_extend("keep", {}, DEFAULT_OPTS)
+
+local blacklisted_client_id = {}
 
 ---@param hint_item lsp.InlayHint
 ---@return string
@@ -63,7 +68,7 @@ end
 
 ---@param opts InlayHintFillerOpts?
 M.fill = function(opts)
-  opts = vim.tbl_deep_extend("keep", opts or {}, DEFAULT_OPTS)
+  opts = vim.tbl_deep_extend("keep", {} or opts, options, DEFAULT_OPTS)
   if vim.fn.mode() == "n" then
     local hints = vim.lsp.inlay_hint.get({ bufnr = opts.bufnr })
     local cursor_pos = vim.api.nvim_win_get_cursor(0)
@@ -71,7 +76,10 @@ M.fill = function(opts)
     local col = cursor_pos[2]
     if hints ~= nil and #hints >= 1 then
       for _, hint_item in pairs(hints) do
-        if opts.client_id == nil or opts.client_id == hint_item.client_id then
+        if
+          (opts.client_id == nil or opts.client_id == hint_item.client_id)
+          and not vim.list_contains(blacklisted_client_id, hint_item.client_id)
+        then
           insert_hint_item(hint_item.inlay_hint, opts, row, col)
         end
       end
@@ -95,7 +103,10 @@ M.fill = function(opts)
         return pos1.line <= pos2.line and pos1.character < pos2.character
       end)
       for _, hint_item in pairs(hints) do
-        if opts.client_id == nil or opts.client_id == hint_item.client_id then
+        if
+          (opts.client_id == nil or opts.client_id == hint_item.client_id)
+          and not vim.list_contains(blacklisted_client_id, hint_item.client_id)
+        then
           local original_pos = hint_item.inlay_hint.position
           hint_item.inlay_hint.position.character = original_pos.character
             + (str_offset[original_pos.line] or 0)
@@ -109,4 +120,24 @@ M.fill = function(opts)
   end
 end
 
+local function refresh_clients()
+  -- collect the client IDs of language servers that should be blacklisted.
+  blacklisted_client_id = {}
+  for _, server_name in pairs(options.blacklisted_servers) do
+    local clients = vim.lsp.get_clients({ name = server_name })
+    for _, client in pairs(clients) do
+      vim.list_extend(blacklisted_client_id, { client.id })
+    end
+  end
+end
+
+---@param opts  InlayHintFillerOpts
+M.setup = function(opts)
+  options = vim.tbl_deep_extend("keep", opts or {}, DEFAULT_OPTS)
+  refresh_clients()
+  vim.api.nvim_create_autocmd("LspAttach", {
+    desc = "Refresh in case of LspRestart.",
+    callback = refresh_clients,
+  })
+end
 return M

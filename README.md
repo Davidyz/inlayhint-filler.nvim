@@ -32,7 +32,31 @@ Use your favourite plugin manager.
     }
 }
 ```
+## Conftiguration
+> [!NOTE]
+> This section is optional. The basic functionality should work as long as you 
+> set up the keymap. Apart from that, any configurations, including the `setup`, is 
+> optional.
 
+The following options may be passed either to the `setup` function as the global
+options when you load the plugin, or to the `fill` function so that you want to 
+write code around it that does fancy stuff and want to use a different config. 
+The table you pass to the `fill` function will not affect the global options.
+
+```lua 
+require('inlayhint-filler').setup({ 
+    bufnr = 0, -- integer?
+    client_id = nil, -- integer?
+    blacklisted_servers = {} -- string[]
+})
+
+```
+
+- `bufnr`: specify the buffer number (`0` for the current one);
+- `client_id`: specify the source of the inlay hint;
+- `blacklisted_servers`: the names of language servers from which the inlay hints should
+  be ignored. The names are valid as long as they work with
+  `vim.lsp.get_clients()`.
 ## Usage 
 Suppose you have a python code snippet like this:
 
@@ -61,4 +85,5 @@ issues with a specific language/language server, please open an issue (preferabl
 following the issue template for bug report).
 
 ## Todo 
-- [ ] implement support for visual selection mode.
+- [x] implement support for visual selection mode.
+- [x] implement client blacklisting.
