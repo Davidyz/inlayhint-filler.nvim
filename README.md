@@ -26,7 +26,8 @@ Use your favourite plugin manager.
             function()
                 require("inlayhint-filler").fill()
             end,
-            desc = "Insert the inlay-hint under cursor into the buffer."
+            desc = "Insert the inlay-hint under cursor into the buffer.",
+            mode = { "n", "v" } -- include 'v' if you want to use it in visual selection mode
         }
     }
 }
@@ -50,6 +51,9 @@ the left parenthesis or on `1`) and call
 the Lua function `require("inlayhint-filler").fill()`, it'll grab the inlay hint
 and convert the virtual text into actual code in the buffer:
 ![](./images/modified.png)
+
+You can also visual-select a code block and the `fill()` function will insert
+all inlay hints inside the selected block.
 
 ### Language server support
 This plugin is supposed to be language-server-agnostic, but if you encounter any
