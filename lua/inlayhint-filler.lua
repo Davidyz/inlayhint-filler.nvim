@@ -41,57 +41,74 @@ end
 
 ---@param hint_item lsp.InlayHint
 ---@param opts InlayHintFillerOpts
----@param row integer?
----@param col integer?
-local function insert_hint_item(hint_item, opts, row, col)
-  local hint_col = hint_item.position.character
+local function insert_hint_item(hint_item, opts)
   local hint_row = hint_item.position.line
-  if
-    (row == nil and col == nil) or (hint_row == row and math.abs(hint_col - col) <= 1)
-  then
-    if #hint_item.label > 1 then
-      vim.notify(
-        "More than one labels are collected. Defaulting to the first one.",
-        vim.log.levels.WARN,
-        { title = "InlayHint-Filler" }
-      )
-    end
-    local new_line = make_new_line(
-      hint_item,
-      vim.api.nvim_buf_get_lines(opts.bufnr, hint_row, hint_row + 1, false)[1]
+
+  if #hint_item.label > 1 then
+    vim.notify(
+      "More than one labels are collected. Defaulting to the first one.",
+      vim.log.levels.WARN,
+      { title = "InlayHint-Filler" }
     )
-    vim.api.nvim_buf_set_lines(opts.bufnr, hint_row, hint_row + 1, false, {
-      new_line,
-    })
   end
+  local new_line = make_new_line(
+    hint_item,
+    vim.api.nvim_buf_get_lines(opts.bufnr, hint_row, hint_row + 1, false)[1]
+  )
+  vim.api.nvim_buf_set_lines(opts.bufnr, hint_row, hint_row + 1, false, {
+    new_line,
+  })
 end
 
 ---@param opts InlayHintFillerOpts?
 M.fill = function(opts)
+  ---@type InlayHintFillerOpts
   opts = vim.tbl_deep_extend("keep", {} or opts, options, DEFAULT_OPTS)
   if vim.fn.mode() == "n" then
-    local hints = vim.lsp.inlay_hint.get({ bufnr = opts.bufnr })
     local cursor_pos = vim.api.nvim_win_get_cursor(0)
     local row = cursor_pos[1] - 1
     local col = cursor_pos[2]
+    local hints = vim.lsp.inlay_hint.get({
+      bufnr = opts.bufnr,
+      range = {
+        start = { line = row, character = col },
+        ["end"] = {
+          line = row,
+          character = col + 1,
+        },
+      },
+    })
     if hints ~= nil and #hints >= 1 then
       for _, hint_item in pairs(hints) do
         if
           (opts.client_id == nil or opts.client_id == hint_item.client_id)
           and not vim.list_contains(blacklisted_client_id, hint_item.client_id)
         then
-          insert_hint_item(hint_item.inlay_hint, opts, row, col)
+          insert_hint_item(hint_item.inlay_hint, opts)
         end
       end
     end
-  elseif vim.fn.mode() == "v" then
+  elseif string.lower(vim.fn.mode()):find("^.?v%a?") then
     local start_pos = vim.fn.getpos("v")
     local end_pos = vim.fn.getpos(".")
+    if
+      start_pos[1] > end_pos[1]
+      or (start_pos[1] == end_pos[1] and start_pos[2] > end_pos[2])
+    then
+      start_pos, end_pos = end_pos, start_pos
+    end
+
     ---@type lsp.Range
     local lsp_range = {
       start = { line = start_pos[2] - 1, character = start_pos[3] - 1 },
       ["end"] = { line = end_pos[2] - 1, character = end_pos[3] - 1 },
     }
+    if vim.fn.mode() == "V" or vim.fn.mode() == "Vs" then
+      -- visual line selection
+      lsp_range.start.character = 0
+      lsp_range["end"].line = lsp_range["end"].line + 1
+      lsp_range["end"].character = 0
+    end
     local hints = vim.lsp.inlay_hint.get({ bufnr = opts.bufnr, range = lsp_range })
     if hints ~= nil and #hints >= 1 then
       ---@type table<integer, integer>
