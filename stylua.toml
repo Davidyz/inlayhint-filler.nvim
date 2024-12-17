@@ -3,3 +3,4 @@ indent_width = 2
 column_width = 88
 quote_style = "AutoPreferDouble"
 no_call_parentheses = false
+syntax = 'LuaJIT'
