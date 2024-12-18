@@ -44,9 +44,11 @@ end
 local function insert_hint_item(hint_item, opts)
   local hint_row = hint_item.position.line
 
-  if #hint_item.label > 1 then
+  if type(hint_item.label) == "table" and #hint_item.label > 1 then
     vim.notify(
-      "More than one labels are collected. Defaulting to the first one.",
+      ("More than one labels are collected. Defaulting to the first one.\nDetails: %s"):format(
+        vim.inspect(hint_item.label)
+      ),
       vim.log.levels.WARN,
       { title = "InlayHint-Filler" }
     )
