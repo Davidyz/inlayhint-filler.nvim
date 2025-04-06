@@ -113,27 +113,64 @@ M.fill = function(opts)
     end
     local hints = vim.lsp.inlay_hint.get({ bufnr = opts.bufnr, range = lsp_range })
     if hints ~= nil and #hints >= 1 then
-      ---@type table<integer, integer>
-      local str_offset = {}
+      -- Sort hints by position
       table.sort(hints, function(item1, item2)
         local pos1 = item1.inlay_hint.position
         local pos2 = item2.inlay_hint.position
-
-        return pos1.line <= pos2.line and pos1.character < pos2.character
+        return pos1.line < pos2.line
+          or (pos1.line == pos2.line and pos1.character < pos2.character)
       end)
-      for _, hint_item in pairs(hints) do
+
+      -- Process hints line by line
+      local current_line = -1
+      local line_content = ""
+      local offsets = {}
+
+      for i = 1, #hints do
+        local hint_item = hints[i]
         if
           (opts.client_id == nil or opts.client_id == hint_item.client_id)
           and not vim.list_contains(blacklisted_client_id, hint_item.client_id)
         then
-          local original_pos = hint_item.inlay_hint.position
-          hint_item.inlay_hint.position.character = original_pos.character
-            + (str_offset[original_pos.line] or 0)
-          insert_hint_item(hint_item.inlay_hint, opts)
-          local inserted_size = get_inserted_text(hint_item.inlay_hint):len()
-          str_offset[original_pos.line] = (str_offset[original_pos.line] or 0)
-            + inserted_size
+          local pos = hint_item.inlay_hint.position
+          if pos.line ~= current_line then
+            -- Apply previous line changes if any
+            if current_line >= 0 and #line_content > 0 then
+              offsets[current_line] = offsets[current_line] or 0
+              vim.api.nvim_buf_set_lines(
+                opts.bufnr,
+                current_line,
+                current_line + 1,
+                false,
+                { line_content }
+              )
+            end
+            -- Get fresh line content for new line
+            local fresh_lines =
+              vim.api.nvim_buf_get_lines(opts.bufnr, pos.line, pos.line + 1, false)
+            line_content = fresh_lines[1] or ""
+            current_line = pos.line
+            offsets[current_line] = offsets[current_line] or 0
+          end
+
+          local inserted_text = get_inserted_text(hint_item.inlay_hint)
+          local insert_pos = pos.character + offsets[current_line]
+          line_content = line_content:sub(1, insert_pos)
+            .. inserted_text
+            .. line_content:sub(insert_pos + 1)
+          offsets[current_line] = offsets[current_line] + #inserted_text
         end
+      end
+
+      -- Apply final line changes
+      if current_line >= 0 and #line_content > 0 then
+        vim.api.nvim_buf_set_lines(
+          opts.bufnr,
+          current_line,
+          current_line + 1,
+          false,
+          { line_content }
+        )
       end
     end
   end
