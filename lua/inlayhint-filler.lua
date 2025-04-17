@@ -30,12 +30,12 @@ local function get_inserted_text(hint_item)
   return hint_text
 end
 
----@param hints vim.lsp.inlay_hint.get.ret[]
+---@param hints lsp.InlayHint[]
 ---@param opts InlayHintFillerOpts
 local function process_hints(hints, opts)
   table.sort(hints, function(item1, item2)
-    local pos1 = item1.inlay_hint.position
-    local pos2 = item2.inlay_hint.position
+    local pos1 = item1.position
+    local pos2 = item2.position
     return pos1.line < pos2.line
       or (pos1.line == pos2.line and pos1.character < pos2.character)
   end)
@@ -46,36 +46,31 @@ local function process_hints(hints, opts)
 
   for i = 1, #hints do
     local hint_item = hints[i]
-    if
-      (opts.client_id == nil or opts.client_id == hint_item.client_id)
-      and not vim.list_contains(blacklisted_client_id, hint_item.client_id)
-    then
-      local pos = hint_item.inlay_hint.position
-      if pos.line ~= current_line then
-        if current_line >= 0 and #line_content > 0 then
-          offsets[current_line] = offsets[current_line] or 0
-          vim.api.nvim_buf_set_lines(
-            opts.bufnr,
-            current_line,
-            current_line + 1,
-            false,
-            { line_content }
-          )
-        end
-        local fresh_lines =
-          vim.api.nvim_buf_get_lines(opts.bufnr, pos.line, pos.line + 1, false)
-        line_content = fresh_lines[1] or ""
-        current_line = pos.line
+    local pos = hint_item.position
+    if pos.line ~= current_line then
+      if current_line >= 0 and #line_content > 0 then
         offsets[current_line] = offsets[current_line] or 0
+        vim.api.nvim_buf_set_lines(
+          opts.bufnr,
+          current_line,
+          current_line + 1,
+          false,
+          { line_content }
+        )
       end
-
-      local inserted_text = get_inserted_text(hint_item.inlay_hint)
-      local insert_pos = pos.character + offsets[current_line]
-      line_content = line_content:sub(1, insert_pos)
-        .. inserted_text
-        .. line_content:sub(insert_pos + 1)
-      offsets[current_line] = offsets[current_line] + #inserted_text
+      local fresh_lines =
+        vim.api.nvim_buf_get_lines(opts.bufnr, pos.line, pos.line + 1, false)
+      line_content = fresh_lines[1] or ""
+      current_line = pos.line
+      offsets[current_line] = offsets[current_line] or 0
     end
+
+    local inserted_text = get_inserted_text(hint_item)
+    local insert_pos = pos.character + offsets[current_line]
+    line_content = line_content:sub(1, insert_pos)
+      .. inserted_text
+      .. line_content:sub(insert_pos + 1)
+    offsets[current_line] = offsets[current_line] + #inserted_text
   end
 
   if current_line >= 0 and #line_content > 0 then
@@ -99,6 +94,60 @@ local function refresh_clients()
   end
 end
 
+--- Get the InlayHints the hard way.
+--- Avoids incompatibility in case another plugin overrides the inlayhint handler.
+---@param bufnr integer
+---@param range lsp.Range
+---@return lsp.InlayHint[]
+local function get_hints(bufnr, range)
+  local hints = {} ---@type lsp.InlayHint[]
+
+  ---@type vim.lsp.Client
+  local clients
+  if DEFAULT_OPTS.client_id ~= nil then
+    clients = vim.lsp.get_clients({ client_id = DEFAULT_OPTS.client_id })
+  else
+    clients = vim.lsp.get_clients({ bufnr = bufnr })
+  end
+
+  for _, client in pairs(clients) do
+    if
+      not vim.list_contains(blacklisted_client_id, client.id)
+      and client.server_capabilities.inlayHintProvider
+    then
+      -- not blacklisted
+      local range_params = vim.lsp.util.make_range_params(bufnr, client.offset_encoding)
+      range_params.range = range
+      local ret, _ = client:request_sync(
+        vim.lsp.protocol.Methods.textDocument_inlayHint,
+        range_params,
+        2 ^ 32 - 1,
+        bufnr
+      )
+      if ret ~= nil then
+        local result = ret.result
+        if result == {} or result == nil then
+          goto continue
+        end
+        for _, inlay_hint in pairs(result) do
+          if
+            not vim.list_contains(
+              vim.tbl_map(function(v)
+                return vim.deep_equal(v.position, inlay_hint.position)
+              end, hints),
+              true
+            )
+          then
+            table.insert(hints, inlay_hint)
+          end
+        end
+      end
+    end
+    ::continue::
+  end
+  return hints
+end
+
 ---@param opts InlayHintFillerOpts?
 M.fill = function(opts)
   refresh_clients()
@@ -108,12 +157,9 @@ M.fill = function(opts)
     local cursor_pos = vim.api.nvim_win_get_cursor(0)
     local row = cursor_pos[1] - 1
     local col = cursor_pos[2]
-    local hints = vim.lsp.inlay_hint.get({
-      bufnr = opts.bufnr,
-      range = {
-        start = { line = row, character = col },
-        ["end"] = { line = row, character = col + 1 },
-      },
+    local hints = get_hints(opts.bufnr, {
+      start = { line = row, character = col },
+      ["end"] = { line = row, character = col + 1 },
     })
     if hints and #hints > 0 then
       process_hints(hints, opts)
@@ -138,7 +184,7 @@ M.fill = function(opts)
       lsp_range["end"].line = lsp_range["end"].line + 1
       lsp_range["end"].character = 0
     end
-    local hints = vim.lsp.inlay_hint.get({ bufnr = opts.bufnr, range = lsp_range })
+    local hints = get_hints(opts.bufnr, lsp_range)
     if hints and #hints > 0 then
       process_hints(hints, opts)
     end
