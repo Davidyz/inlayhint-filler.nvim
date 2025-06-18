@@ -32,7 +32,7 @@ Use your favourite plugin manager.
     }
 }
 ```
-## Conftiguration
+## Configuration
 > [!NOTE]
 > This section is optional. The basic functionality should work as long as you 
 > set up the keymap. Apart from that, any configurations, including the `setup`, is 
@@ -67,7 +67,7 @@ def factorial(x):
 print(factorial(10))
 ```
 
-A language server with inlay hint support, like [basedpyright](https://github.com/DetachHead/basedpyright), and enabled inlay-hint in your neovim config, neovim will render the buffer into something like this:
+With a language server with inlay hint support, like [basedpyright](https://github.com/DetachHead/basedpyright), and enabled inlay-hint in your neovim config, neovim will render the buffer into something like this:
 ![](./images/inlayhint.png)
 
 If you put your cursor next to the inlay hint `x=` in the last line (either on
