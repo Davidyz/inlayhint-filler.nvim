@@ -1,5 +1,7 @@
 M = {}
 
+local api = vim.api
+
 ---@class InlayHintFillerOpts
 ---@field bufnr integer?
 ---@field client_id integer?
@@ -50,16 +52,18 @@ local function process_hints(hints, opts)
     if pos.line ~= current_line then
       if current_line >= 0 and #line_content > 0 then
         offsets[current_line] = offsets[current_line] or 0
-        vim.api.nvim_buf_set_lines(
-          opts.bufnr,
-          current_line,
-          current_line + 1,
-          false,
-          { line_content }
-        )
+        vim.schedule(function()
+          api.nvim_buf_set_lines(
+            opts.bufnr,
+            current_line,
+            current_line + 1,
+            false,
+            { line_content }
+          )
+        end)
       end
       local fresh_lines =
-        vim.api.nvim_buf_get_lines(opts.bufnr, pos.line, pos.line + 1, false)
+        api.nvim_buf_get_lines(opts.bufnr, pos.line, pos.line + 1, false)
       line_content = fresh_lines[1] or ""
       current_line = pos.line
       offsets[current_line] = offsets[current_line] or 0
@@ -74,13 +78,15 @@ local function process_hints(hints, opts)
   end
 
   if current_line >= 0 and #line_content > 0 then
-    vim.api.nvim_buf_set_lines(
-      opts.bufnr,
-      current_line,
-      current_line + 1,
-      false,
-      { line_content }
-    )
+    vim.schedule(function()
+      api.nvim_buf_set_lines(
+        opts.bufnr,
+        current_line,
+        current_line + 1,
+        false,
+        { line_content }
+      )
+    end)
   end
 end
 
@@ -153,8 +159,9 @@ M.fill = function(opts)
   refresh_clients()
   ---@type InlayHintFillerOpts
   opts = vim.tbl_deep_extend("keep", {} or opts, options, DEFAULT_OPTS)
-  if vim.fn.mode() == "n" then
-    local cursor_pos = vim.api.nvim_win_get_cursor(0)
+  local mode = vim.fn.mode()
+  if mode == "n" then
+    local cursor_pos = api.nvim_win_get_cursor(0)
     local row = cursor_pos[1] - 1
     local col = cursor_pos[2]
     local hints = get_hints(opts.bufnr, {
@@ -164,7 +171,7 @@ M.fill = function(opts)
     if hints and #hints > 0 then
       process_hints(hints, opts)
     end
-  elseif string.lower(vim.fn.mode()):find("^.?v%a?") then
+  elseif string.lower(mode):find("^.?v%a?") then
     local start_pos = vim.fn.getpos("v")
     local end_pos = vim.fn.getpos(".")
     if
@@ -179,7 +186,7 @@ M.fill = function(opts)
       start = { line = start_pos[2] - 1, character = start_pos[3] - 1 },
       ["end"] = { line = end_pos[2] - 1, character = end_pos[3] - 1 },
     }
-    if vim.fn.mode() == "V" or vim.fn.mode() == "Vs" then
+    if mode == "V" or mode == "Vs" then
       lsp_range.start.character = 0
       lsp_range["end"].line = lsp_range["end"].line + 1
       lsp_range["end"].character = 0
@@ -189,14 +196,14 @@ M.fill = function(opts)
       process_hints(hints, opts)
     end
   end
-  vim.api.nvim_input("<esc>")
+  api.nvim_input("<esc>")
 end
 
 ---@param opts InlayHintFillerOpts
 M.setup = function(opts)
   options = vim.tbl_deep_extend("keep", opts or {}, DEFAULT_OPTS)
   refresh_clients()
-  vim.api.nvim_create_autocmd("LspAttach", {
+  api.nvim_create_autocmd("LspAttach", {
     desc = "Refresh in case of LspRestart.",
     callback = refresh_clients,
   })
