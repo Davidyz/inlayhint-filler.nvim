@@ -32,6 +32,7 @@ Use your favourite plugin manager.
     }
 }
 ```
+
 ## Configuration
 > [!NOTE]
 > This section is optional. The basic functionality should work as long as you 
@@ -78,6 +79,21 @@ and convert the virtual text into actual code in the buffer:
 
 You can also visual-select a code block and the `fill()` function will insert
 all inlay hints inside the selected block.
+
+### Dot-repeat
+
+The `fill` function can be used as a [`operatorfunc`](https://neovim.io/doc/user/options.html#'operatorfunc'), which makes it
+dot-repeatable. You'll just need to make some changes to the keymap:
+
+```lua
+vim.keymap.set({ "n", "v" }, "<Leader>I", function()
+  vim.o.operatorfunc = "v:lua.require'inlayhint-filler'.fill"
+  return "g@ "
+end, { expr = true })
+```
+
+This will be part of the plugin soon, so that you don't have to handle the
+`operatorfunc` yourself.
 
 ### Language server support
 This plugin is supposed to be language-server-agnostic, but if you encounter any
