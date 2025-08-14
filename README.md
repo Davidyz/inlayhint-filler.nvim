@@ -14,7 +14,7 @@ functions that takes dozens of arguments_.
 
 ## Installation 
 
-This plugin is developed and tested on the latest stable release of neovim.
+> This plugin is developed and tested on the latest stable release of neovim.
 
 Use your favourite plugin manager.
 ```lua
@@ -24,12 +24,10 @@ Use your favourite plugin manager.
         {
             "<Leader>I", -- Use whatever keymap you want.
             function()
-                -- make sure to `return` the `fill` call.
-                return require("inlayhint-filler").fill()
+                require("inlayhint-filler").fill()
             end,
             desc = "Insert the inlay-hint under cursor into the buffer.",
             mode = { "n", "v" }, -- include 'v' if you want to use it in visual selection mode
-            expr = true -- necessary
         }
     }
 }

@@ -61,11 +61,12 @@ local function is_lsp_position_in_range(pos, range)
   end
 end
 
+---@param action? string operatorfunc argument. Reserved for future use.
 ---@param opts? InlayHintFillerOpts
-M._fill = function(opts)
+M._fill = function(action, opts)
   local bufnr = vim.api.nvim_get_current_buf()
   ---@type InlayHintFillerOpts
-  opts = vim.tbl_deep_extend("keep", {} or opts, options, DEFAULT_OPTS)
+  opts = vim.tbl_deep_extend("force", options, {} or opts)
   local mode = vim.fn.mode()
   ---@type lsp.Range?
   local lsp_range
@@ -103,49 +104,53 @@ M._fill = function(opts)
     return
   end
 
-  local done = false
+  local done = false -- indicator of whether the text edits has been applied.
+
   for cli in
-    vim.iter(vim.lsp.get_clients({
-      bufnr = bufnr,
-      method = vim.lsp.protocol.Methods.textDocument_inlayHint,
-    }))
+    vim
+      .iter(vim.lsp.get_clients({
+        bufnr = bufnr,
+        method = vim.lsp.protocol.Methods.textDocument_inlayHint,
+      }))
+      :filter(function(cli)
+        -- exclude blacklisted servers.
+        return not vim.list_contains(opts.blacklisted_servers, cli.name)
+      end)
   do
     if done then
       return
     end
-    if not vim.list_contains(opts.blacklisted_servers, cli.name) then
-      local params = vim.lsp.util.make_range_params(0, cli.offset_encoding)
-      params.range = lsp_range
-      cli:request(
-        vim.lsp.protocol.Methods.textDocument_inlayHint,
-        params,
-        function(_, result, context, _)
-          if done then
-            return
-          end
-          ---@type lsp.InlayHint[]
-          result = vim
-            .iter(result or {})
-            :filter(
-              ---@param hint lsp.InlayHint
-              function(hint)
-                return is_lsp_position_in_range(hint.position, lsp_range)
-              end
-            )
-            :totable()
-          if result == nil or vim.tbl_isempty(result) then
-            return
-          end
-
-          done = true
-          vim.schedule_wrap(vim.lsp.util.apply_text_edits)(
-            vim.iter(result):map(get_text_edits):flatten(1):totable(),
-            context.bufnr,
-            cli.offset_encoding
-          )
+    local params = vim.lsp.util.make_range_params(0, cli.offset_encoding)
+    params.range = lsp_range
+    cli:request(
+      vim.lsp.protocol.Methods.textDocument_inlayHint,
+      params,
+      function(_, result, context, _)
+        if done then
+          return
         end
-      )
-    end
+        ---@type lsp.InlayHint[]
+        result = vim
+          .iter(result or {})
+          :filter(
+            ---@param hint lsp.InlayHint
+            function(hint)
+              return is_lsp_position_in_range(hint.position, lsp_range)
+            end
+          )
+          :totable()
+        if result == nil or vim.tbl_isempty(result) then
+          return
+        end
+
+        done = true
+        vim.schedule_wrap(vim.lsp.util.apply_text_edits)(
+          vim.iter(result):map(get_text_edits):flatten(1):totable(),
+          context.bufnr,
+          cli.offset_encoding
+        )
+      end
+    )
   end
 end
 
@@ -154,9 +159,9 @@ M.fill = function(opts)
   vim.o.operatorfunc = "v:lua.require'inlayhint-filler'._fill"
   if vim.fn.mode() == "n" then
     -- normal mode
-    return "g@ "
+    return api.nvim_input("g@ ")
   end
-  return M._fill(opts)
+  return M._fill(nil, opts)
 end
 
 ---@param opts InlayHintFillerOpts
