@@ -25,7 +25,7 @@ local function get_text_edits(hint)
   )
 
   local label = hint.label
-  if type(label) == "table" then
+  if type(label) == "table" and not vim.tbl_isempty(label) then
     label = label[1].value
   end
   return {
