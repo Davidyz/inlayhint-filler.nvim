@@ -56,7 +56,9 @@ require('inlayhint-filler').setup({
 ```
 
 - `blacklisted_servers`: the names of language servers from which the inlay hints should
-  be ignored.
+  be ignored. You may also disable the relevant capability (`inlayHintProvider`)
+  of the server when you call `vim.lsp.config()` on the server, which disable
+  _all_ inlayHint-related features from the particular server.
 
 ## Usage 
 Suppose you have a python code snippet like this:
