@@ -9,12 +9,12 @@ This plugin provides an API to insert the inlay-hint under the cursor into the
 buffer.
 In Python, this is useful when you want to insert the type annotation from the
 language server into the code, or you want to turn an unnamed argument (`f(10)`)
-into a named argument (`f(x=10)`) (_particularly useful when working with
-functions that takes dozens of arguments_).
+into a named argument (`f(x=10)`). _This is particularly useful when working with
+functions that takes dozens of arguments_.
 
 ## Installation 
 
-This plugin is developed and tested on the latest stable release of neovim.
+> This plugin is developed and tested on the latest stable release of neovim.
 
 Use your favourite plugin manager.
 ```lua
@@ -27,11 +27,15 @@ Use your favourite plugin manager.
                 require("inlayhint-filler").fill()
             end,
             desc = "Insert the inlay-hint under cursor into the buffer.",
-            mode = { "n", "v" } -- include 'v' if you want to use it in visual selection mode
+            mode = { "n", "v" }, -- include 'v' if you want to use it in visual selection mode
         }
     }
 }
 ```
+
+The normal mode filling is dot-repeatable: when you trigger the
+keymap in normal mode, you can move your cursor to the next inlay hint and
+press `.`, and the hint will be inserted.
 
 ## Configuration
 > [!NOTE]
@@ -46,18 +50,16 @@ The table you pass to the `fill` function will not affect the global options.
 
 ```lua 
 require('inlayhint-filler').setup({ 
-    bufnr = 0, -- integer?
-    client_id = nil, -- integer?
     blacklisted_servers = {} -- string[]
 })
 
 ```
 
-- `bufnr`: specify the buffer number (`0` for the current one);
-- `client_id`: specify the source of the inlay hint;
 - `blacklisted_servers`: the names of language servers from which the inlay hints should
-  be ignored. The names are valid as long as they work with
-  `vim.lsp.get_clients()`.
+  be ignored. You may also disable the relevant capability (`inlayHintProvider`)
+  of the server when you call `vim.lsp.config()` on the server, which disable
+  _all_ inlayHint-related features from the particular server.
+
 ## Usage 
 Suppose you have a python code snippet like this:
 
@@ -80,25 +82,16 @@ and convert the virtual text into actual code in the buffer:
 You can also visual-select a code block and the `fill()` function will insert
 all inlay hints inside the selected block.
 
-### Dot-repeat
-
-The `fill` function can be used as a [`operatorfunc`](https://neovim.io/doc/user/options.html#'operatorfunc'), which makes it
-dot-repeatable. You'll just need to make some changes to the keymap:
-
-```lua
-vim.keymap.set({ "n", "v" }, "<Leader>I", function()
-  vim.o.operatorfunc = "v:lua.require'inlayhint-filler'.fill"
-  return "g@ "
-end, { expr = true })
-```
-
-This will be part of the plugin soon, so that you don't have to handle the
-`operatorfunc` yourself.
-
 ### Language server support
 This plugin is supposed to be language-server-agnostic, but if you encounter any
 issues with a specific language/language server, please open an issue (preferably
-following the issue template for bug report).
+following the issue template for bug report). 
+
+This plugin works best if the inlay hints returned by the language servers
+contain [`textEdits`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textEdit)
+(see [`inlayHint` specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_inlayHint) 
+for details). If it's not found, this plugin will instead use the `label` as the
+inserted text.
 
 ## Todo 
 - [x] implement support for visual selection mode.
