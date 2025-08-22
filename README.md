@@ -12,6 +12,8 @@ language server into the code, or you want to turn an unnamed argument (`f(10)`)
 into a named argument (`f(x=10)`). _This is particularly useful when working with
 functions that takes dozens of arguments_.
 
+![](./images/demo.gif)
+
 ## Installation 
 
 > This plugin is developed and tested on the latest stable release of neovim.
@@ -61,26 +63,11 @@ require('inlayhint-filler').setup({
   _all_ inlayHint-related features from the particular server.
 
 ## Usage 
-Suppose you have a python code snippet like this:
 
-```python
-def factorial(x):
-    return x * factorial(x - 1) if x > 1 else x
-
-print(factorial(10))
-```
-
-With a language server with inlay hint support, like [basedpyright](https://github.com/DetachHead/basedpyright), and enabled inlay-hint in your neovim config, neovim will render the buffer into something like this:
-![](./images/inlayhint.png)
-
-If you put your cursor next to the inlay hint `x=` in the last line (either on
-the left parenthesis or on `1`) and call
-the Lua function `require("inlayhint-filler").fill()`, it'll grab the inlay hint
-and convert the virtual text into actual code in the buffer:
-![](./images/modified.png)
-
-You can also visual-select a code block and the `fill()` function will insert
-all inlay hints inside the selected block.
+- **Normal mode**: Move the cursor right next to the hint that you want to insert,
+  and press your keymap (in my demo, it's `<Leader>I`);
+- **Visual selection**: Select a code block that contains some inlay hints, and 
+  press the keymap.
 
 ### Language server support
 This plugin is supposed to be language-server-agnostic, but if you encounter any
@@ -92,6 +79,10 @@ contain [`textEdits`](https://microsoft.github.io/language-server-protocol/speci
 (see [`inlayHint` specification](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_inlayHint) 
 for details). If it's not found, this plugin will instead use the `label` as the
 inserted text.
+
+For Python, I recommend [basedpyright](https://github.com/detachhead/basedpyright), 
+because when the inserted hint is a type annotation that contains unimported
+symbols, basedpyright will add the import statements for you.
 
 ## Todo 
 - [x] implement support for visual selection mode.
