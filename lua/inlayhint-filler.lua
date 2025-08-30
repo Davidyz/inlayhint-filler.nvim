@@ -1,5 +1,6 @@
 M = {}
 
+local notify = vim.schedule_wrap(vim.notify)
 local api = vim.api
 
 ---@class InlayHintFillerOpts
@@ -18,7 +19,7 @@ local function get_text_edits(hint)
     return hint.textEdits
   end
 
-  vim.schedule_wrap(vim.notify)(
+  notify(
     "Failed to extract text edits from LSP.",
     vim.log.levels.WARN,
     { title = "Inlayhint-Filler" }
@@ -104,20 +105,21 @@ M._fill = function(action, opts)
     return
   end
 
-  local done = false -- indicator of whether the text edits has been applied.
+  local clients = vim
+    .iter(vim.lsp.get_clients({
+      bufnr = bufnr,
+      method = vim.lsp.protocol.Methods.textDocument_inlayHint,
+    }))
+    :filter(function(cli)
+      -- exclude blacklisted servers.
+      return not vim.list_contains(opts.blacklisted_servers, cli.name)
+    end)
+    :totable()
 
-  for cli in
-    vim
-      .iter(vim.lsp.get_clients({
-        bufnr = bufnr,
-        method = vim.lsp.protocol.Methods.textDocument_inlayHint,
-      }))
-      :filter(function(cli)
-        -- exclude blacklisted servers.
-        return not vim.list_contains(opts.blacklisted_servers, cli.name)
-      end)
-  do
-    if done then
+  ---@param idx? integer
+  ---@param cli vim.lsp.Client
+  local function do_insert(idx, cli)
+    if cli == nil or idx == nil then
       return
     end
     local params = vim.lsp.util.make_range_params(0, cli.offset_encoding)
@@ -126,9 +128,6 @@ M._fill = function(action, opts)
       vim.lsp.protocol.Methods.textDocument_inlayHint,
       params,
       function(_, result, context, _)
-        if done then
-          return
-        end
         ---@type lsp.InlayHint[]
         result = vim
           .iter(result or {})
@@ -140,18 +139,19 @@ M._fill = function(action, opts)
           )
           :totable()
         if result == nil or vim.tbl_isempty(result) then
-          return
+          return do_insert(next(clients, idx))
         end
 
-        done = true
         vim.schedule_wrap(vim.lsp.util.apply_text_edits)(
           vim.iter(result):map(get_text_edits):flatten(1):totable(),
           context.bufnr,
           cli.offset_encoding
         )
+        return do_insert(next(clients, idx))
       end
     )
   end
+  return do_insert(next(clients))
 end
 
 ---@param opts InlayHintFillerOpts?
