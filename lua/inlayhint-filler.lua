@@ -1,4 +1,4 @@
-M = {}
+local M = {}
 
 local notify = vim.schedule_wrap(vim.notify)
 local api = vim.api
