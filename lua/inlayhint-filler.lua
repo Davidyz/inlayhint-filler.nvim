@@ -1,13 +1,15 @@
 local M = {}
 
 local notify = vim.schedule_wrap(vim.notify)
+local notify_opts = { title = "Inlayhint-Filler" }
 local api = vim.api
 
 ---@class InlayHintFillerOpts
----@field blacklisted_servers string[]
+---@field blacklisted_servers? string[]
+---@field force? boolean whether to insert the hint when `textEdits` are missing
 
 ---@type InlayHintFillerOpts
-local DEFAULT_OPTS = { blacklisted_servers = {} }
+local DEFAULT_OPTS = { blacklisted_servers = {}, force = false }
 
 ---@type InlayHintFillerOpts
 local options = vim.deepcopy(DEFAULT_OPTS)
@@ -19,28 +21,33 @@ local function get_text_edits(hint)
     return hint.textEdits
   end
 
-  notify(
-    "Failed to extract text edits from LSP.",
-    vim.log.levels.WARN,
-    { title = "Inlayhint-Filler" }
-  )
+  if options.force then
+    notify("Failed to extract text edits from LSP.", vim.log.levels.WARN, notify_opts)
 
-  local label = hint.label
-  if type(label) == "table" and not vim.tbl_isempty(label) then
-    label = label[1].value
+    local label = hint.label
+    if type(label) == "table" and not vim.tbl_isempty(label) then
+      label = label[1].value
+    end
+    return {
+      ---@type lsp.TextEdit
+      {
+        range = { start = hint.position, ["end"] = hint.position },
+        newText = string.format(
+          "%s%s%s",
+          hint.paddingLeft and " " or "",
+          label,
+          hint.paddingRight and " " or ""
+        ),
+      },
+    }
+  else
+    notify(
+      "The inlay hint replies don't contain `textEdits`.",
+      vim.log.levels.ERROR,
+      notify_opts
+    )
+    return {}
   end
-  return {
-    ---@type lsp.TextEdit
-    {
-      range = { start = hint.position, ["end"] = hint.position },
-      newText = string.format(
-        "%s%s%s",
-        hint.paddingLeft and " " or "",
-        label,
-        hint.paddingRight and " " or ""
-      ),
-    },
-  }
 end
 
 ---@param pos lsp.Position

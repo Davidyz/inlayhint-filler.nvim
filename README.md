@@ -20,18 +20,18 @@ functions that takes dozens of arguments_.
 
 Use your favourite plugin manager.
 ```lua
-{
-    "Davidyz/inlayhint-filler.nvim",
-    keys={
-        {
-            "<Leader>I", -- Use whatever keymap you want.
-            function()
-                require("inlayhint-filler").fill()
-            end,
-            desc = "Insert the inlay-hint under cursor into the buffer.",
-            mode = { "n", "v" }, -- include 'v' if you want to use it in visual selection mode
-        }
-    }
+return {
+  "Davidyz/inlayhint-filler.nvim",
+  keys = {
+    {
+      "<Leader>I", -- Use whatever keymap you want.
+      function()
+        require("inlayhint-filler").fill()
+      end,
+      desc = "Insert the inlay-hint under cursor into the buffer.",
+      mode = { "n", "v" }, -- include 'v' if you want to use it in visual selection mode
+    },
+  },
 }
 ```
 
@@ -51,16 +51,17 @@ write code around it that does fancy stuff and want to use a different config.
 The table you pass to the `fill` function will not affect the global options.
 
 ```lua 
-require('inlayhint-filler').setup({ 
-    blacklisted_servers = {} -- string[]
+require("inlayhint-filler").setup({
+  blacklisted_servers = {}, -- string[]
 })
-
 ```
 
 - `blacklisted_servers`: the names of language servers from which the inlay hints should
   be ignored. You may also disable the relevant capability (`inlayHintProvider`)
   of the server when you call `vim.lsp.config()` on the server, which disable
   _all_ inlayHint-related features from the particular server.
+- `force`: `boolean`, whether to build the inserted text from the label when `textEdits` 
+  are missing from [the LSP replies](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_inlayHint).
 
 ## Usage 
 
