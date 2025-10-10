@@ -37,7 +37,15 @@ local function get_text_edits(hint, bufnr)
 
     local label = hint.label
     if type(label) == "table" and not vim.tbl_isempty(label) then
-      label = label[1].value
+      label = table.concat(
+        vim
+          .iter(label)
+          :map(function(item)
+            return item.value or ""
+          end)
+          :totable(),
+        ""
+      )
     end
     return {
       ---@type lsp.TextEdit
