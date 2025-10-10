@@ -67,6 +67,11 @@ require("inlayhint-filler").setup({
     
     - `bufnr`: integer, the buffer number.
     - `hint`: a [`lsp.InlayHint`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#inlayHint) object.
+- `eager`: `boolean`, whether to request for all inlay hints from the LSP when sending the requests.
+  This can also be a function that accepts a table with the following keys and returns a 
+  boolean:
+    
+    - `bufnr`: `integer`, the buffer number.
 
 ## Usage 
 

@@ -10,9 +10,11 @@ local api = vim.api
 ---
 ---Can be a function that returns a boolean.
 ---@field force? boolean|fun(ctx:{bufnr: integer, hint:lsp.InlayHint}):boolean
+---Whether to request for all inlay hints from LSP.
+---@field eager? boolean|fun(ctx:{bufnr:integer}):boolean
 
 ---@type InlayHintFillerOpts
-local DEFAULT_OPTS = { blacklisted_servers = {}, force = false }
+local DEFAULT_OPTS = { blacklisted_servers = {}, force = false, eager = false }
 
 ---@type InlayHintFillerOpts
 local options = vim.deepcopy(DEFAULT_OPTS)
@@ -132,6 +134,22 @@ M._fill = function(action, opts)
     end)
     :totable()
 
+  local eager = options.eager
+  local range_param = lsp_range
+  if type(eager) == "function" then
+    eager({ bufnr = api.nvim_get_current_buf() })
+    ---@cast eager -function
+  end
+
+  if eager then
+    local buf_line_count = api.nvim_buf_line_count(0)
+
+    range_param = {
+      start = { line = 0, character = 0 },
+      ["end"] = { line = buf_line_count, character = 0 },
+    }
+  end
+
   ---@param idx? integer
   ---@param cli vim.lsp.Client
   local function do_insert(idx, cli)
@@ -139,7 +157,8 @@ M._fill = function(action, opts)
       return
     end
     local params = vim.lsp.util.make_range_params(0, cli.offset_encoding)
-    params.range = lsp_range
+    params.range = range_param
+
     cli:request(
       vim.lsp.protocol.Methods.textDocument_inlayHint,
       params,
