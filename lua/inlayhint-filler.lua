@@ -6,7 +6,10 @@ local api = vim.api
 
 ---@class InlayHintFillerOpts
 ---@field blacklisted_servers? string[]
----@field force? boolean whether to insert the hint when `textEdits` are missing
+---Whether to build the `textEdits` from the label when the LSP reply doesn't contain textEdits.
+---
+---Can be a function that returns a boolean.
+---@field force? boolean|fun(ctx:{bufnr: integer, hint:lsp.InlayHint}):boolean
 
 ---@type InlayHintFillerOpts
 local DEFAULT_OPTS = { blacklisted_servers = {}, force = false }
@@ -15,13 +18,19 @@ local DEFAULT_OPTS = { blacklisted_servers = {}, force = false }
 local options = vim.deepcopy(DEFAULT_OPTS)
 
 ---@param hint lsp.InlayHint
+---@param bufnr integer
 ---@return lsp.TextEdit[]
-local function get_text_edits(hint)
+local function get_text_edits(hint, bufnr)
   if hint.textEdits then
     return hint.textEdits
   end
 
-  if options.force then
+  local force = options.force
+  if type(force) == "function" then
+    force = force({ bufnr = bufnr, hint = hint })
+  end
+
+  if force then
     notify("Failed to extract text edits from LSP.", vim.log.levels.WARN, notify_opts)
 
     local label = hint.label
@@ -150,7 +159,13 @@ M._fill = function(action, opts)
         end
 
         vim.schedule_wrap(vim.lsp.util.apply_text_edits)(
-          vim.iter(result):map(get_text_edits):flatten(1):totable(),
+          vim
+            .iter(result)
+            :map(function(item)
+              return get_text_edits(item, context.bufnr)
+            end)
+            :flatten(1)
+            :totable(),
           context.bufnr,
           cli.offset_encoding
         )

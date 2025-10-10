@@ -62,6 +62,11 @@ require("inlayhint-filler").setup({
   _all_ inlayHint-related features from the particular server.
 - `force`: `boolean`, whether to build the inserted text from the label when `textEdits` 
   are missing from [the LSP replies](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocument_inlayHint).
+  This can also be a function that accepts a table with the following keys and returns 
+  a boolean: 
+    
+    - `bufnr`: integer, the buffer number.
+    - `hint`: a [`lsp.InlayHint`](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#inlayHint) object.
 
 ## Usage 
 
