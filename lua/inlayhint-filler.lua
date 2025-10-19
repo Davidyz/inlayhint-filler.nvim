@@ -3,6 +3,8 @@ local M = {}
 local notify = vim.schedule_wrap(vim.notify)
 local notify_opts = { title = "Inlayhint-Filler" }
 local api = vim.api
+local lsp = vim.lsp
+local lsp_apply_text_edits = vim.schedule_wrap(lsp.util.apply_text_edits)
 
 ---@class InlayHintFillerOpts
 ---@field blacklisted_servers? string[]
@@ -132,9 +134,9 @@ M._fill = function(action, opts)
   end
 
   local clients = vim
-    .iter(vim.lsp.get_clients({
+    .iter(lsp.get_clients({
       bufnr = bufnr,
-      method = vim.lsp.protocol.Methods.textDocument_inlayHint,
+      method = "textDocument/inlayHint",
     }))
     :filter(function(cli)
       -- exclude blacklisted servers.
@@ -145,7 +147,7 @@ M._fill = function(action, opts)
   local eager = options.eager
   local range_param = lsp_range
   if type(eager) == "function" then
-    eager({ bufnr = api.nvim_get_current_buf() })
+    eager = eager({ bufnr = api.nvim_get_current_buf() })
     ---@cast eager -function
   end
 
@@ -158,20 +160,38 @@ M._fill = function(action, opts)
     }
   end
 
+  ---@param client vim.lsp.Client
+  ---@param hints lsp.InlayHint[]
+  ---@return integer
+  local function apply_edits(client, hints)
+    local edits = vim
+      .iter(hints)
+      :map(function(item)
+        return get_text_edits(item, bufnr)
+      end)
+      :flatten(1)
+      :totable()
+
+    lsp_apply_text_edits(edits, bufnr, client.offset_encoding)
+    return #edits
+  end
+
   ---@param idx? integer
   ---@param cli vim.lsp.Client
   local function do_insert(idx, cli)
     if cli == nil or idx == nil then
       return
     end
-    local params = vim.lsp.util.make_range_params(0, cli.offset_encoding)
+    local params = lsp.util.make_range_params(0, cli.offset_encoding)
     params.range = range_param
 
+    local support_resolve = cli:supports_method("inlayHint/resolve", bufnr)
+
     cli:request(
-      vim.lsp.protocol.Methods.textDocument_inlayHint,
+      "textDocument/inlayHint",
       params,
-      function(_, result, context, _)
-        ---@type lsp.InlayHint[]
+      ---@param result lsp.InlayHint[]?
+      function(_, result, _, _)
         result = vim
           .iter(result or {})
           :filter(
@@ -181,21 +201,44 @@ M._fill = function(action, opts)
             end
           )
           :totable()
+
         if result == nil or vim.tbl_isempty(result) then
           return do_insert(next(clients, idx))
         end
+        if not support_resolve then
+          if apply_edits(cli, result) == 0 then
+            return do_insert(next(clients, idx))
+          else
+            return
+          end
+        else
+          local finished_count = 0
+          for i, hint in pairs(result) do
+            if hint.textEdits == nil or vim.tbl_isempty(hint.textEdits) then
+              cli:request("inlayHint/resolve", hint, function(_, _result, _, _)
+                result[i] = vim.tbl_deep_extend("force", hint, _result)
+                finished_count = finished_count + 1
+                if finished_count == #result then
+                  if apply_edits(cli, result) == 0 then
+                    return do_insert(next(clients, idx))
+                  end
+                else
+                  return
+                end
+              end, bufnr)
+            else
+              finished_count = finished_count + 1
+              if finished_count == #result then
+                if apply_edits(cli, result) == 0 then
+                  return do_insert(next(clients, idx))
+                else
+                  return
+                end
+              end
+            end
+          end
+        end
 
-        vim.schedule_wrap(vim.lsp.util.apply_text_edits)(
-          vim
-            .iter(result)
-            :map(function(item)
-              return get_text_edits(item, context.bufnr)
-            end)
-            :flatten(1)
-            :totable(),
-          context.bufnr,
-          cli.offset_encoding
-        )
         return do_insert(next(clients, idx))
       end
     )
