@@ -53,6 +53,9 @@ The table you pass to the `fill` function will not affect the global options.
 ```lua 
 require("inlayhint-filler").setup({
   blacklisted_servers = {}, -- string[]
+  force = false,
+  eager = false,
+  verbose = false,
 })
 ```
 
@@ -72,6 +75,8 @@ require("inlayhint-filler").setup({
   boolean:
     
     - `bufnr`: `integer`, the buffer number.
+- `verbose`: `boolean`, whether to include the `lsp.inlayHint` object when there's no 
+  `textEdits` items in the inlayhint objects. Useful for debugging. Default: `false`.
 
 ## Usage 
 

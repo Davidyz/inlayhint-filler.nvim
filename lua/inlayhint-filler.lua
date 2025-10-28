@@ -14,9 +14,11 @@ local lsp_apply_text_edits = vim.schedule_wrap(lsp.util.apply_text_edits)
 ---@field force? boolean|fun(ctx:{bufnr: integer, hint:lsp.InlayHint}):boolean
 ---Whether to request for all inlay hints from LSP.
 ---@field eager? boolean|fun(ctx:{bufnr:integer}):boolean
+---@field verbose? boolean
 
 ---@type InlayHintFillerOpts
-local DEFAULT_OPTS = { blacklisted_servers = {}, force = false, eager = false }
+local DEFAULT_OPTS =
+  { blacklisted_servers = {}, force = false, eager = false, verbose = false }
 
 ---@type InlayHintFillerOpts
 local options = vim.deepcopy(DEFAULT_OPTS)
@@ -34,9 +36,22 @@ local function get_text_edits(hint, bufnr)
     force = force({ bufnr = bufnr, hint = hint })
   end
 
+  local log_level = vim.log.levels.ERROR
   if force then
-    notify("Failed to extract text edits from LSP.", vim.log.levels.WARN, notify_opts)
+    log_level = vim.log.levels.WARN
+  end
 
+  notify(
+    "Failed to extract text edits from the provided inlayhint"
+      .. (
+        options.verbose and string.format(":\n```lua\n%s```", vim.inspect(hint))
+        or "."
+      ),
+    log_level,
+    notify_opts
+  )
+
+  if force then
     local label = hint.label
     if type(label) == "table" and not vim.tbl_isempty(label) then
       label = table.concat(
@@ -62,11 +77,6 @@ local function get_text_edits(hint, bufnr)
       },
     }
   else
-    notify(
-      "The inlay hint replies don't contain `textEdits`.",
-      vim.log.levels.ERROR,
-      notify_opts
-    )
     return {}
   end
 end
