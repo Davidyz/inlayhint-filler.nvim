@@ -111,12 +111,13 @@ M._fill = function(action, opts)
   local lsp_range
 
   if mode == "n" then
-    local cursor_pos = api.nvim_win_get_cursor(0)
-    local row = cursor_pos[1] - 1
-    local col = cursor_pos[2]
+    local start_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "["))
+    local end_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "]"))
+    start_pos.buf = 0
+    end_pos.buf = 0
     lsp_range = {
-      start = { line = row, character = col },
-      ["end"] = { line = row, character = col + 2 },
+      start = start_pos:to_lsp("utf-16"),
+      ["end"] = end_pos:to_lsp("utf-16"),
     }
   elseif string.lower(mode):find("^.?v%a?") then
     local start_pos = vim.fn.getpos("v")
