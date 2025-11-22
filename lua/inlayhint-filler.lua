@@ -23,6 +23,9 @@ local DEFAULT_OPTS =
 ---@type InlayHintFillerOpts
 local options = vim.deepcopy(DEFAULT_OPTS)
 
+---@type InlayHintFillerOpts?
+local register_options
+
 ---@param hint lsp.InlayHint
 ---@param bufnr integer
 ---@return lsp.TextEdit[]
@@ -105,44 +108,12 @@ end
 M._fill = function(action, opts)
   local bufnr = vim.api.nvim_get_current_buf()
   ---@type InlayHintFillerOpts
-  opts = vim.tbl_deep_extend("force", options, {} or opts)
-  local mode = vim.fn.mode()
-  ---@type lsp.Range?
-  local lsp_range
+  opts = vim.tbl_deep_extend("force", options, register_options or {})
 
-  if mode == "n" then
-    local start_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "["))
-    local end_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "]"))
-    start_pos.buf = 0
-    end_pos.buf = 0
-    lsp_range = {
-      start = start_pos:to_lsp("utf-16"),
-      ["end"] = end_pos:to_lsp("utf-16"),
-    }
-  elseif string.lower(mode):find("^.?v%a?") then
-    local start_pos = vim.fn.getpos("v")
-    local end_pos = vim.fn.getpos(".")
-    if
-      start_pos[1] > end_pos[1]
-      or (start_pos[1] == end_pos[1] and start_pos[2] > end_pos[2])
-    then
-      start_pos, end_pos = end_pos, start_pos
-    end
-
-    lsp_range = {
-      start = { line = start_pos[2] - 1, character = start_pos[3] - 1 },
-      ["end"] = { line = end_pos[2] - 1, character = end_pos[3] - 1 },
-    }
-    if mode == "V" or mode == "Vs" then
-      lsp_range.start.character = 0
-      lsp_range["end"].line = lsp_range["end"].line + 1
-      lsp_range["end"].character = 0
-    end
-  end
-
-  if lsp_range == nil then
-    return
-  end
+  local start_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "["))
+  local end_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "]"))
+  start_pos.buf = 0
+  end_pos.buf = 0
 
   local clients = vim
     .iter(lsp.get_clients({
@@ -156,7 +127,7 @@ M._fill = function(action, opts)
     :totable()
 
   local eager = options.eager
-  local range_param = lsp_range
+  local range_param
   if type(eager) == "function" then
     eager = eager({ bufnr = api.nvim_get_current_buf() })
     ---@cast eager -function
@@ -194,7 +165,8 @@ M._fill = function(action, opts)
       return
     end
     local params = lsp.util.make_range_params(0, cli.offset_encoding)
-    params.range = range_param
+    local lsp_range = vim.range(start_pos, end_pos):to_lsp(cli.offset_encoding)
+    params.range = range_param or lsp_range
 
     local support_resolve = cli:supports_method("inlayHint/resolve", bufnr)
 
@@ -260,11 +232,9 @@ end
 ---@param opts InlayHintFillerOpts?
 M.fill = function(opts)
   vim.o.operatorfunc = "v:lua.require'inlayhint-filler'._fill"
-  if vim.fn.mode() == "n" then
-    -- normal mode
-    return api.nvim_input("g@ ")
-  end
-  return M._fill(nil, opts)
+  register_options = opts
+  local motion = api.nvim_get_mode().mode:match("[vV\022]") and "`<" or ""
+  api.nvim_input("g@" .. motion)
 end
 
 ---@param opts InlayHintFillerOpts
