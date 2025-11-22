@@ -103,13 +103,14 @@ local function is_lsp_position_in_range(pos, range)
   end
 end
 
----@param action? string operatorfunc argument. Reserved for future use.
+---@param _action? string operatorfunc argument. Reserved for future use.
 ---@param opts? InlayHintFillerOpts
-M._fill = function(action, opts)
-  local bufnr = vim.api.nvim_get_current_buf()
+M._fill = function(_action, opts)
+  local bufnr = api.nvim_get_current_buf()
   ---@type InlayHintFillerOpts
   opts = vim.tbl_deep_extend("force", options, register_options or {})
 
+  assert(vim.pos.cursor)
   local start_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "["))
   local end_pos = vim.pos.cursor(api.nvim_buf_get_mark(0, "]"))
   start_pos.buf = 0
@@ -122,7 +123,7 @@ M._fill = function(action, opts)
     }))
     :filter(function(cli)
       -- exclude blacklisted servers.
-      return not vim.list_contains(opts.blacklisted_servers, cli.name)
+      return not vim.list_contains(opts.blacklisted_servers or {}, cli.name)
     end)
     :totable()
 
@@ -159,7 +160,7 @@ M._fill = function(action, opts)
   end
 
   ---@param idx? integer
-  ---@param cli vim.lsp.Client
+  ---@param cli? vim.lsp.Client
   local function do_insert(idx, cli)
     if cli == nil or idx == nil then
       return
