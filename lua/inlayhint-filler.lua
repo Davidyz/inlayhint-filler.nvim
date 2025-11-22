@@ -4,6 +4,7 @@ local notify = vim.schedule_wrap(vim.notify)
 local notify_opts = { title = "Inlayhint-Filler" }
 local api = vim.api
 local lsp = vim.lsp
+local fn = vim.fn
 local lsp_apply_text_edits = vim.schedule_wrap(lsp.util.apply_text_edits)
 
 ---@class InlayHintFillerOpts
@@ -103,24 +104,26 @@ end
 ---@param action? string operatorfunc argument. Reserved for future use.
 ---@param opts? InlayHintFillerOpts
 M._fill = function(action, opts)
-  local bufnr = vim.api.nvim_get_current_buf()
+  local bufnr = api.nvim_get_current_buf()
   ---@type InlayHintFillerOpts
   opts = vim.tbl_deep_extend("force", options, {} or opts)
-  local mode = vim.fn.mode()
-  ---@type lsp.Range?
-  local lsp_range
+  local mode = fn.mode()
+
+  --- (1, 0) based index
+  ---@type {["start"]: [integer, integer], ["end"]: [integer, integer]}?
+  local cursor_range
 
   if mode == "n" then
-    local cursor_pos = api.nvim_win_get_cursor(0)
-    local row = cursor_pos[1] - 1
+    local cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(bufnr))
+    local row = cursor_pos[1]
     local col = cursor_pos[2]
-    lsp_range = {
-      start = { line = row, character = col },
-      ["end"] = { line = row, character = col + 2 },
+    cursor_range = {
+      start = { row, col },
+      ["end"] = { row, col + 2 },
     }
   elseif string.lower(mode):find("^.?v%a?") then
-    local start_pos = vim.fn.getpos("v")
-    local end_pos = vim.fn.getpos(".")
+    local start_pos = fn.getpos("v")
+    local end_pos = fn.getpos(".")
     if
       start_pos[1] > end_pos[1]
       or (start_pos[1] == end_pos[1] and start_pos[2] > end_pos[2])
@@ -128,18 +131,18 @@ M._fill = function(action, opts)
       start_pos, end_pos = end_pos, start_pos
     end
 
-    lsp_range = {
-      start = { line = start_pos[2] - 1, character = start_pos[3] - 1 },
-      ["end"] = { line = end_pos[2] - 1, character = end_pos[3] - 1 },
+    cursor_range = {
+      start = { start_pos[2], start_pos[3] - 1 },
+      ["end"] = { end_pos[2], end_pos[3] - 1 },
     }
     if mode == "V" or mode == "Vs" then
-      lsp_range.start.character = 0
-      lsp_range["end"].line = lsp_range["end"].line + 1
-      lsp_range["end"].character = 0
+      cursor_range.start[2] = 0
+      cursor_range["end"][1] = cursor_range["end"][1] + 1
+      cursor_range["end"][2] = 0
     end
   end
 
-  if lsp_range == nil then
+  if cursor_range == nil then
     return
   end
 
@@ -155,18 +158,17 @@ M._fill = function(action, opts)
     :totable()
 
   local eager = options.eager
-  local range_param = lsp_range
   if type(eager) == "function" then
     eager = eager({ bufnr = api.nvim_get_current_buf() })
     ---@cast eager -function
   end
 
   if eager then
-    local buf_line_count = api.nvim_buf_line_count(0)
+    local buf_line_count = api.nvim_buf_line_count(bufnr)
 
-    range_param = {
-      start = { line = 0, character = 0 },
-      ["end"] = { line = buf_line_count, character = 0 },
+    cursor_range = {
+      start = { 1, 0 },
+      ["end"] = { buf_line_count, 0 },
     }
   end
 
@@ -192,8 +194,13 @@ M._fill = function(action, opts)
     if cli == nil or idx == nil then
       return
     end
-    local params = lsp.util.make_range_params(0, cli.offset_encoding)
-    params.range = range_param
+
+    local params = lsp.util.make_given_range_params(
+      cursor_range.start,
+      cursor_range["end"],
+      bufnr,
+      cli.offset_encoding or "utf-16"
+    )
 
     local support_resolve = cli:supports_method("inlayHint/resolve", bufnr)
 
@@ -207,7 +214,7 @@ M._fill = function(action, opts)
           :filter(
             ---@param hint lsp.InlayHint
             function(hint)
-              return is_lsp_position_in_range(hint.position, lsp_range)
+              return is_lsp_position_in_range(hint.position, params.range)
             end
           )
           :totable()
@@ -259,7 +266,7 @@ end
 ---@param opts InlayHintFillerOpts?
 M.fill = function(opts)
   vim.o.operatorfunc = "v:lua.require'inlayhint-filler'._fill"
-  if vim.fn.mode() == "n" then
+  if fn.mode() == "n" then
     -- normal mode
     return api.nvim_input("g@ ")
   end
