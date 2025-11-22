@@ -114,13 +114,20 @@ M._fill = function(action, opts)
   local cursor_range
 
   if mode == "n" then
-    local cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(bufnr))
-    local row = cursor_pos[1]
-    local col = cursor_pos[2]
-    cursor_range = {
-      start = { row, col },
-      ["end"] = { row, col + 2 },
-    }
+    if action == "line" then
+      cursor_range = {
+        start = api.nvim_buf_get_mark(bufnr, "["),
+        ["end"] = api.nvim_buf_get_mark(bufnr, "]"),
+      }
+    else
+      local cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(bufnr))
+      local row = cursor_pos[1]
+      local col = cursor_pos[2]
+      cursor_range = {
+        start = { row, col },
+        ["end"] = { row, col + 2 },
+      }
+    end
   elseif string.lower(mode):find("^.?v%a?") then
     local start_pos = fn.getpos("v")
     local end_pos = fn.getpos(".")
@@ -263,12 +270,15 @@ M._fill = function(action, opts)
   return do_insert(next(clients))
 end
 
----@param opts InlayHintFillerOpts?
+---@class InlayHintFillerFillOpts: InlayHintFillerOpts
+---@field textobject? boolean
+
+---@param opts InlayHintFillerFillOpts?
 M.fill = function(opts)
   vim.o.operatorfunc = "v:lua.require'inlayhint-filler'._fill"
   if fn.mode() == "n" then
     -- normal mode
-    return api.nvim_input("g@ ")
+    return api.nvim_input("g@" .. ((opts or {}).textobject and "" or " "))
   end
   return M._fill(nil, opts)
 end

@@ -85,6 +85,15 @@ require("inlayhint-filler").setup({
 - **Visual selection**: Select a code block that contains some inlay hints, and 
   press the keymap.
 
+### Textobjects
+
+To use the `fill()` function with textobjects, pass the `textobject` option when mapping the `fill()` function: 
+```lua
+vim.keymap.set("n", "<Leader>I", function()
+  require("inlayhint-filler").fill({ textobject = true })
+end)
+```
+
 ### Language server support
 This plugin is supposed to be language-server-agnostic, but if you encounter any
 issues with a specific language/language server, please open an issue (preferably
@@ -99,7 +108,3 @@ inserted text.
 For Python, I recommend [basedpyright](https://github.com/detachhead/basedpyright), 
 because when the inserted hint is a type annotation that contains unimported
 symbols, basedpyright will add the import statements for you.
-
-## Todo 
-- [x] implement support for visual selection mode.
-- [x] implement client blacklisting.
