@@ -1,86 +1,9 @@
 local M = {}
 
-local notify = vim.schedule_wrap(vim.notify)
-local notify_opts = { title = "Inlayhint-Filler" }
 local api = vim.api
 local lsp = vim.lsp
 local fn = vim.fn
-local lsp_apply_text_edits = vim.schedule_wrap(lsp.util.apply_text_edits)
-
----@class InlayHintFillerOpts
----@field blacklisted_servers? string[]
----Whether to build the `textEdits` from the label when the LSP reply doesn't contain textEdits.
----
----Can be a function that returns a boolean.
----@field force? boolean|fun(ctx:{bufnr: integer, hint:lsp.InlayHint}):boolean
----Whether to request for all inlay hints from LSP.
----@field eager? boolean|fun(ctx:{bufnr:integer}):boolean
----@field verbose? boolean
-
----@type InlayHintFillerOpts
-local DEFAULT_OPTS =
-  { blacklisted_servers = {}, force = false, eager = false, verbose = false }
-
----@type InlayHintFillerOpts
-local options = vim.deepcopy(DEFAULT_OPTS)
-
----@param hint lsp.InlayHint
----@param bufnr integer
----@return lsp.TextEdit[]
-local function get_text_edits(hint, bufnr)
-  if hint.textEdits then
-    return hint.textEdits
-  end
-
-  local force = options.force
-  if type(force) == "function" then
-    force = force({ bufnr = bufnr, hint = hint })
-  end
-
-  local log_level = vim.log.levels.ERROR
-  if force then
-    log_level = vim.log.levels.WARN
-  end
-
-  notify(
-    "Failed to extract text edits from the provided inlayhint"
-      .. (
-        options.verbose and string.format(":\n```lua\n%s```", vim.inspect(hint))
-        or "."
-      ),
-    log_level,
-    notify_opts
-  )
-
-  if force then
-    local label = hint.label
-    if type(label) == "table" and not vim.tbl_isempty(label) then
-      label = table.concat(
-        vim
-          .iter(label)
-          :map(function(item)
-            return item.value or ""
-          end)
-          :totable(),
-        ""
-      )
-    end
-    return {
-      ---@type lsp.TextEdit
-      {
-        range = { start = hint.position, ["end"] = hint.position },
-        newText = string.format(
-          "%s%s%s",
-          hint.paddingLeft and " " or "",
-          label,
-          hint.paddingRight and " " or ""
-        ),
-      },
-    }
-  else
-    return {}
-  end
-end
+local actions = require("inlayhint-filler.actions")
 
 ---@param pos lsp.Position
 ---@param range lsp.Range
@@ -101,12 +24,10 @@ local function is_lsp_position_in_range(pos, range)
   end
 end
 
----@param action? string operatorfunc argument. Reserved for future use.
----@param opts? InlayHintFillerOpts
-M._fill = function(action, opts)
-  local bufnr = api.nvim_get_current_buf()
-  ---@type InlayHintFillerOpts
-  opts = vim.tbl_deep_extend("force", options, {} or opts)
+---@param motion string?
+---@param ctx {bufnr: integer}
+---@return {["start"]: [integer, integer], ["end"]: [integer, integer]}?
+local function make_range(motion, ctx)
   local mode = fn.mode()
 
   --- (1, 0) based index
@@ -114,7 +35,7 @@ M._fill = function(action, opts)
   local cursor_range
 
   if mode == "n" then
-    local cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(bufnr))
+    local cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(ctx.bufnr))
     local row = cursor_pos[1]
     local col = cursor_pos[2]
     cursor_range = {
@@ -142,6 +63,39 @@ M._fill = function(action, opts)
     end
   end
 
+  local eager = require("inlayhint-filler.config").get_config().eager
+  if type(eager) == "function" then
+    eager = eager({ bufnr = api.nvim_get_current_buf() })
+    ---@cast eager -function
+  end
+
+  if eager then
+    local buf_line_count = api.nvim_buf_line_count(ctx.bufnr)
+
+    cursor_range = {
+      start = { 1, 0 },
+      ["end"] = { buf_line_count, 0 },
+    }
+  end
+  if cursor_range == nil then
+    return
+  end
+  return cursor_range
+end
+
+---@param motion? string operatorfunc argument. Reserved for future use.
+---@param opts? InlayHintFiller.Opts
+M._fill = function(motion, opts)
+  local bufnr = api.nvim_get_current_buf()
+  ---@type InlayHintFiller.Opts
+  opts = vim.tbl_deep_extend(
+    "force",
+    require("inlayhint-filler.config").get_config(),
+    {} or opts
+  )
+
+  local cursor_range = make_range(motion, { bufnr = bufnr })
+
   if cursor_range == nil then
     return
   end
@@ -157,40 +111,9 @@ M._fill = function(action, opts)
     end)
     :totable()
 
-  local eager = options.eager
-  if type(eager) == "function" then
-    eager = eager({ bufnr = api.nvim_get_current_buf() })
-    ---@cast eager -function
-  end
-
-  if eager then
-    local buf_line_count = api.nvim_buf_line_count(bufnr)
-
-    cursor_range = {
-      start = { 1, 0 },
-      ["end"] = { buf_line_count, 0 },
-    }
-  end
-
-  ---@param client vim.lsp.Client
-  ---@param hints lsp.InlayHint[]
-  ---@return integer
-  local function apply_edits(client, hints)
-    local edits = vim
-      .iter(hints)
-      :map(function(item)
-        return get_text_edits(item, bufnr)
-      end)
-      :flatten(1)
-      :totable()
-
-    lsp_apply_text_edits(edits, bufnr, client.offset_encoding)
-    return #edits
-  end
-
   ---@param idx? integer
   ---@param cli vim.lsp.Client
-  local function do_insert(idx, cli)
+  local function do_action(idx, cli)
     if cli == nil or idx == nil then
       return
     end
@@ -203,6 +126,8 @@ M._fill = function(action, opts)
     )
 
     local support_resolve = cli:supports_method("inlayHint/resolve", bufnr)
+    ---@type InlayHintFiller.Callback.Context
+    local action_ctx = { client = cli, bufnr = bufnr }
 
     cli:request(
       "textDocument/inlayHint",
@@ -220,11 +145,11 @@ M._fill = function(action, opts)
           :totable()
 
         if result == nil or vim.tbl_isempty(result) then
-          return do_insert(next(clients, idx))
+          return do_action(next(clients, idx))
         end
         if not support_resolve then
-          if apply_edits(cli, result) == 0 then
-            return do_insert(next(clients, idx))
+          if actions.textEdits(result, action_ctx) == 0 then
+            return do_action(next(clients, idx))
           else
             return
           end
@@ -236,8 +161,8 @@ M._fill = function(action, opts)
                 result[i] = vim.tbl_deep_extend("force", hint, _result)
                 finished_count = finished_count + 1
                 if finished_count == #result then
-                  if apply_edits(cli, result) == 0 then
-                    return do_insert(next(clients, idx))
+                  if actions.textEdits(result, action_ctx) == 0 then
+                    return do_action(next(clients, idx))
                   end
                 else
                   return
@@ -246,8 +171,8 @@ M._fill = function(action, opts)
             else
               finished_count = finished_count + 1
               if finished_count == #result then
-                if apply_edits(cli, result) == 0 then
-                  return do_insert(next(clients, idx))
+                if actions.textEdits(result, action_ctx) == 0 then
+                  return do_action(next(clients, idx))
                 else
                   return
                 end
@@ -256,14 +181,14 @@ M._fill = function(action, opts)
           end
         end
 
-        return do_insert(next(clients, idx))
+        return do_action(next(clients, idx))
       end
     )
   end
-  return do_insert(next(clients))
+  return do_action(next(clients))
 end
 
----@param opts InlayHintFillerOpts?
+---@param opts InlayHintFiller.Opts?
 M.fill = function(opts)
   vim.o.operatorfunc = "v:lua.require'inlayhint-filler'._fill"
   if fn.mode() == "n" then
@@ -273,9 +198,12 @@ M.fill = function(opts)
   return M._fill(nil, opts)
 end
 
----@param opts InlayHintFillerOpts
+---@param action InlayHintFiller.Action|InlayHintFiller.Callback
+M.do_action = function(action) end
+
+---@param opts InlayHintFiller.Opts?
 M.setup = function(opts)
-  options = vim.tbl_deep_extend("keep", opts or {}, DEFAULT_OPTS)
+  require("inlayhint-filler.config").setup(opts or {})
 end
 
 return M
