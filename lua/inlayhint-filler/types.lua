@@ -10,14 +10,14 @@
 ---@field eager? boolean|fun(ctx:{bufnr:integer}):boolean
 ---@field verbose? boolean
 
----@alias InlayHintFiller.Action
+---@alias InlayHintFiller.Action.Name
 --- | "textEdits"
 --- | "tooltip"
 --- | "location"
 --- | "command"
 
----@class InlayHintFiller.Callback.Context
+---@class (private) InlayHintFiller.Action.Callback.Context
 ---@field bufnr integer
 ---@field client vim.lsp.Client
 
----@alias InlayHintFiller.Callback fun(hints: lsp.InlayHint[], ctx: InlayHintFiller.Callback.Context):integer
+---@alias InlayHintFiller.Action.Callback fun(hints: lsp.InlayHint[], ctx: InlayHintFiller.Action.Callback.Context):integer

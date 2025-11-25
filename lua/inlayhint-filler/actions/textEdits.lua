@@ -4,7 +4,7 @@ local notify = vim.schedule_wrap(vim.notify)
 local config = require("inlayhint-filler.config")
 
 ---@param hint lsp.InlayHint
----@param ctx InlayHintFiller.Callback.Context
+---@param ctx InlayHintFiller.Action.Callback.Context
 ---@return lsp.TextEdit[]
 local function get_edits(hint, ctx)
   local options = config.get_config()
@@ -32,36 +32,20 @@ local function get_edits(hint, ctx)
     config.notify_opts
   )
   if force then
-    ---@type string?
-    local new_text
-    if type(hint.label) == "string" then
-      new_text = string.format(
-        "%s%s%s",
-        hint.paddingLeft and " " or "",
-        hint.label,
-        hint.paddingRight and " " or ""
-      )
-    else
-      new_text = vim
-        .iter(hint.label)
-        :map(
-          ---@param item lsp.InlayHintLabelPart
-          function(item)
-            return item.value
-          end
-        )
-        :join("")
+    local new_text = require("inlayhint-filler.utils").make_label(hint, true)
+    if new_text then
+      return {
+        {
+          range = { start = hint.position, ["end"] = hint.position },
+          newText = new_text,
+        },
+      }
     end
-    return {
-      range = { start = hint.position, ["end"] = hint.position },
-      newText = new_text,
-    }
-  else
-    return {}
   end
+  return {}
 end
 
----@type InlayHintFiller.Callback
+---@type InlayHintFiller.Action.Callback
 local cb = function(hints, ctx)
   local count = 0
   if #hints == 0 then

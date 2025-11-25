@@ -24,24 +24,33 @@ local function is_lsp_position_in_range(pos, range)
   end
 end
 
+---@class (private) InlayHintFiller.CursorRange
+---@field start [integer, integer]
+---@field end [integer, integer]
+
 ---@param motion string?
 ---@param ctx {bufnr: integer}
----@return {["start"]: [integer, integer], ["end"]: [integer, integer]}?
+---@return InlayHintFiller.CursorRange?
 local function make_range(motion, ctx)
   local mode = fn.mode()
 
   --- (1, 0) based index
-  ---@type {["start"]: [integer, integer], ["end"]: [integer, integer]}?
+  ---@type InlayHintFiller.CursorRange?
   local cursor_range
 
   if mode == "n" then
-    local cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(ctx.bufnr))
-    local row = cursor_pos[1]
-    local col = cursor_pos[2]
-    cursor_range = {
-      start = { row, col },
-      ["end"] = { row, col + 2 },
-    }
+    local cursor_pos
+    if motion == nil or motion == "char" then
+      cursor_pos = api.nvim_win_get_cursor(fn.bufwinid(ctx.bufnr))
+      local row = cursor_pos[1]
+      local col = cursor_pos[2]
+      cursor_range = {
+        start = { row, col },
+        ["end"] = { row, col + 2 },
+      }
+    else
+      error("Unsupported motion: " .. motion)
+    end
   elseif string.lower(mode):find("^.?v%a?") then
     local start_pos = fn.getpos("v")
     local end_pos = fn.getpos(".")
@@ -63,41 +72,47 @@ local function make_range(motion, ctx)
     end
   end
 
-  local eager = require("inlayhint-filler.config").get_config().eager
-  if type(eager) == "function" then
-    eager = eager({ bufnr = api.nvim_get_current_buf() })
-    ---@cast eager -function
-  end
-
-  if eager then
-    local buf_line_count = api.nvim_buf_line_count(ctx.bufnr)
-
-    cursor_range = {
-      start = { 1, 0 },
-      ["end"] = { buf_line_count, 0 },
-    }
-  end
   if cursor_range == nil then
     return
   end
   return cursor_range
 end
 
----@param motion? string operatorfunc argument. Reserved for future use.
----@param opts? InlayHintFiller.Opts
-M._fill = function(motion, opts)
+---@class (private) InlayHintFiller.DoAction.Opts: InlayHintFiller.Opts
+
+---@param action_cb InlayHintFiller.Action.Callback
+---@param range_or_motion? InlayHintFiller.CursorRange|string
+local _do_action = function(action_cb, range_or_motion)
+  vim.validate("action_cb", action_cb, "function", "action_cb should be a function")
   local bufnr = api.nvim_get_current_buf()
-  ---@type InlayHintFiller.Opts
-  opts = vim.tbl_deep_extend(
-    "force",
-    require("inlayhint-filler.config").get_config(),
-    {} or opts
-  )
+  local setup_opts = require("inlayhint-filler.config").get_config()
 
-  local cursor_range = make_range(motion, { bufnr = bufnr })
+  local eager = setup_opts.eager
+  if type(eager) == "function" then
+    eager = eager({ bufnr = bufnr })
+    ---@cast eager -function
+  end
 
-  if cursor_range == nil then
+  ---The range used when filtering the results.
+  ---@type InlayHintFiller.CursorRange?
+  local strict_range
+  if range_or_motion == nil or type(range_or_motion) == "string" then
+    strict_range = make_range(range_or_motion, { bufnr = bufnr })
+  else
+    strict_range = range_or_motion
+  end
+
+  if strict_range == nil then
     return
+  end
+
+  ---The range used when fetching inlay hints from the server.
+  ---@type InlayHintFiller.CursorRange
+  local fetch_range
+  if eager then
+    fetch_range = { start = { 1, 0 }, ["end"] = { api.nvim_buf_line_count(bufnr), 0 } }
+  else
+    fetch_range = strict_range
   end
 
   local clients = vim
@@ -107,7 +122,7 @@ M._fill = function(motion, opts)
     }))
     :filter(function(cli)
       -- exclude blacklisted servers.
-      return not vim.list_contains(opts.blacklisted_servers, cli.name)
+      return not vim.list_contains(setup_opts.blacklisted_servers, cli.name)
     end)
     :totable()
 
@@ -119,14 +134,21 @@ M._fill = function(motion, opts)
     end
 
     local params = lsp.util.make_given_range_params(
-      cursor_range.start,
-      cursor_range["end"],
+      fetch_range.start,
+      fetch_range["end"],
       bufnr,
-      cli.offset_encoding or "utf-16"
+      cli.offset_encoding
     )
 
+    local checked_range = lsp.util.make_given_range_params(
+      strict_range.start,
+      strict_range["end"],
+      bufnr,
+      cli.offset_encoding
+    ).range
+
     local support_resolve = cli:supports_method("inlayHint/resolve", bufnr)
-    ---@type InlayHintFiller.Callback.Context
+    ---@type InlayHintFiller.Action.Callback.Context
     local action_ctx = { client = cli, bufnr = bufnr }
 
     cli:request(
@@ -134,12 +156,15 @@ M._fill = function(motion, opts)
       params,
       ---@param result lsp.InlayHint[]?
       function(_, result, _, _)
+        if result == nil then
+          return do_action(next(clients, idx))
+        end
         result = vim
-          .iter(result or {})
+          .iter(result)
           :filter(
             ---@param hint lsp.InlayHint
             function(hint)
-              return is_lsp_position_in_range(hint.position, params.range)
+              return is_lsp_position_in_range(hint.position, checked_range)
             end
           )
           :totable()
@@ -147,37 +172,26 @@ M._fill = function(motion, opts)
         if result == nil or vim.tbl_isempty(result) then
           return do_action(next(clients, idx))
         end
-        if not support_resolve then
-          if actions.textEdits(result, action_ctx) == 0 then
+        if support_resolve then
+          local finished_count = 0
+          for i, hint in pairs(result) do
+            cli:request("inlayHint/resolve", hint, function(_, _result, _, _)
+              result[i] = vim.tbl_deep_extend("force", hint, _result)
+              finished_count = finished_count + 1
+              if finished_count == #result then
+                if action_cb(result, action_ctx) == 0 then
+                  return do_action(next(clients, idx))
+                end
+              else
+                return
+              end
+            end, bufnr)
+          end
+        else
+          if action_cb(result, action_ctx) == 0 then
             return do_action(next(clients, idx))
           else
             return
-          end
-        else
-          local finished_count = 0
-          for i, hint in pairs(result) do
-            if hint.textEdits == nil or vim.tbl_isempty(hint.textEdits) then
-              cli:request("inlayHint/resolve", hint, function(_, _result, _, _)
-                result[i] = vim.tbl_deep_extend("force", hint, _result)
-                finished_count = finished_count + 1
-                if finished_count == #result then
-                  if actions.textEdits(result, action_ctx) == 0 then
-                    return do_action(next(clients, idx))
-                  end
-                else
-                  return
-                end
-              end, bufnr)
-            else
-              finished_count = finished_count + 1
-              if finished_count == #result then
-                if actions.textEdits(result, action_ctx) == 0 then
-                  return do_action(next(clients, idx))
-                else
-                  return
-                end
-              end
-            end
           end
         end
 
@@ -188,18 +202,58 @@ M._fill = function(motion, opts)
   return do_action(next(clients))
 end
 
----@param opts InlayHintFiller.Opts?
-M.fill = function(opts)
-  vim.o.operatorfunc = "v:lua.require'inlayhint-filler'._fill"
+M.fill = function()
+  vim.deprecate(
+    "require('inlayhint-filler').fill",
+    "require('inlayhint-filler').do_action.textEdits",
+    ---@diagnostic disable-next-line: param-type-mismatch
+    nil,
+    "inlayhint-filler.nvim",
+    true
+  )
+  vim.o.operatorfunc = "v:lua.require'inlayhint-filler'.do_action.textEdits"
   if fn.mode() == "n" then
     -- normal mode
     return api.nvim_input("g@ ")
   end
-  return M._fill(nil, opts)
+  return M.do_action["textEdits"]()
 end
 
----@param action InlayHintFiller.Action|InlayHintFiller.Callback
-M.do_action = function(action) end
+---@alias InlayHintFiller.DoAction fun(motion: string|InlayHintFiller.CursorRange|nil):any
+
+---@class (private) InlayHintFiller.DoAction.Meta
+---@field [InlayHintFiller.Action.Name] InlayHintFiller.DoAction
+---@field __call fun(action: InlayHintFiller.Action.Name, motion: string|InlayHintFillter.CursorRange|nil)
+
+local _do_actions = {}
+
+---@type table<InlayHintFiller.Action.Name, InlayHintFiller.DoAction>|fun(action: InlayHintFiller.Action.Name, motion: string|InlayHintFiller.CursorRange|nil)
+M.do_action = setmetatable(_do_actions, {
+  __index = function(_, action_name)
+    local action_cb = actions[action_name]
+    assert(type(action_cb) == "function", "unsupported action: " .. action_name)
+
+    ---@type InlayHintFiller.DoAction
+    local action = function(motion)
+      -- TODO: dot-repeat/textobject support
+      return _do_action(action_cb, motion)
+    end
+
+    _do_actions[action_name] = action
+    return action
+  end,
+  ---@param action InlayHintFiller.Action.Name|InlayHintFiller.Action.Callback
+  __call = function(_, action)
+    local action_cb = action
+    if type(action) == "string" then
+      action_cb = actions[action]
+    end
+
+    assert(type(action_cb) == "function", "unsupported action: " .. vim.inspect(action))
+
+    return _do_action(action_cb)
+  end,
+})
 
 ---@param opts InlayHintFiller.Opts?
 M.setup = function(opts)

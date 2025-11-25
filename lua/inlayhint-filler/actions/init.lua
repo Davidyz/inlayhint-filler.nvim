@@ -1,4 +1,4 @@
----@type table<InlayHintFiller.Action, InlayHintFiller.Callback>
+---@type table<InlayHintFiller.Action.Name, InlayHintFiller.Action.Callback>
 local actions = setmetatable({}, {
   __index = function(_, action_name)
     local ok, ret = pcall(require, "inlayhint-filler.actions." .. action_name)
