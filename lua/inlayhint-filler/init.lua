@@ -221,10 +221,6 @@ end
 
 ---@alias InlayHintFiller.DoAction fun(motion: string|InlayHintFiller.CursorRange|nil):any
 
----@class (private) InlayHintFiller.DoAction.Meta
----@field [InlayHintFiller.Action.Name] InlayHintFiller.DoAction
----@field __call fun(action: InlayHintFiller.Action.Name, motion: string|InlayHintFillter.CursorRange|nil)
-
 local _do_actions = {}
 
 ---@type table<InlayHintFiller.Action.Name, InlayHintFiller.DoAction>|fun(action: InlayHintFiller.Action.Name, motion: string|InlayHintFiller.CursorRange|nil)
