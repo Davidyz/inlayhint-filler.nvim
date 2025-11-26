@@ -1,20 +1,9 @@
 local api = vim.api
+local lsp = vim.lsp
 local fn = vim.fn
-local utils = require("inlayhint-filler.utils")
 
----@param lines string[]
----@return { bufnr: integer, winid: integer }
-local function open_float(lines)
-  local buf = api.nvim_create_buf(false, true)
-  vim.bo[buf].filetype = "markdown"
-  vim.bo[buf].buftype = "nofile"
-  api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-
-  return {
-    bufnr = buf,
-    winid = api.nvim_open_win(buf, false, { relative = "cursor" }),
-  }
-end
+---@type vim.lsp.util.open_floating_preview.Opts
+local preview_opts = {} -- TODO: parametrise this
 
 ---Returns a structured representation of the tooltips in the `hint`, if any.
 ---Returns `nil` when the hint (and its labelparts) doesn't contain any tooltips.
@@ -23,7 +12,7 @@ end
 local function make_lines_from_hint(hint)
   ---@type string[]
   local result = {
-    string.format("# %s", utils.make_label(hint, false)),
+    string.format("# %s", require("inlayhint-filler.utils").make_label(hint, false)),
     "",
   }
 
@@ -84,7 +73,7 @@ local function cb(_hints, _ctx)
   )
 
   if count > 0 then
-    open_float(lines)
+    lsp.util.open_floating_preview(lines, "markdown", preview_opts)
   end
   return count
 end
