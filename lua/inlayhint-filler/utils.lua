@@ -55,4 +55,18 @@ function M.cleanup_path(path, base)
   return result
 end
 
+---@generic T
+---@param items T[] Arbitrary items
+---@param opts vim.ui.select.Opts Additional options
+---@param on_choice fun(item: T|nil, idx: integer|nil)
+function M.select1(items, opts, on_choice)
+  if #items == 0 then
+    return error("Empty items!")
+  end
+  if #items == 1 then
+    return on_choice(items[1], 1)
+  end
+  return vim.ui.select(items, opts, on_choice)
+end
+
 return M
