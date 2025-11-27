@@ -1,6 +1,5 @@
-local api = vim.api
+local utils = require("inlayhint-filler.utils")
 local lsp = vim.lsp
-local fn = vim.fn
 
 ---@type vim.lsp.util.open_floating_preview.Opts
 local preview_opts = {} -- TODO: parametrise this
@@ -8,13 +7,15 @@ local preview_opts = {} -- TODO: parametrise this
 ---Returns a structured representation of the tooltips in the `hint`, if any.
 ---Returns `nil` when the hint (and its labelparts) doesn't contain any tooltips.
 ---@param hint lsp.InlayHint
+---@param ctx InlayHintFiller.Action.Callback.Context
 ---@return string[]?
-local function make_lines_from_hint(hint)
+local function make_lines_from_hint(hint, ctx)
   ---@type string[]
   local result = {
     string.format("# %s", require("inlayhint-filler.utils").make_label(hint, false)),
     "",
   }
+  local locations = {}
 
   if hint.tooltip then
     if type(hint.tooltip) == "string" then
@@ -33,11 +34,12 @@ local function make_lines_from_hint(hint)
       function(label)
         local _tooltip = label.tooltip
         if _tooltip then
+          -- NOTE: tooltips have only been tested on hls.
           result[#result + 1] = ""
           if type(_tooltip) == "string" then
             vim.list_extend(
               result,
-              { string.format("## %s", label.value), "", _tooltip }
+              { string.format("## `%s`", label.value), "", _tooltip }
             )
           else
             vim.list_extend(
@@ -46,7 +48,35 @@ local function make_lines_from_hint(hint)
             )
           end
         end
+        if label.location then
+          locations[#locations + 1] = { name = label.value, location = label.location }
+        end
       end
+    )
+  end
+
+  if #locations > 0 then
+    result[#result + 1] = ""
+    result[#result + 1] = "## Locations"
+    vim.list_extend(
+      result,
+      vim
+        .iter(locations)
+        :map(
+          ---@param item {name: string, location: lsp.Location}
+          function(item)
+            return string.format(
+              "- `%s`: %s:%d",
+              item.name,
+              utils.cleanup_path(
+                vim.uri_to_fname(item.location.uri),
+                ctx.client.root_dir
+              ),
+              item.location.range.start.line
+            )
+          end
+        )
+        :totable()
     )
   end
 
@@ -64,7 +94,7 @@ local function cb(_hints, _ctx)
   vim.iter(_hints):each(
     ---@param item lsp.InlayHint
     function(item)
-      local lines_from_hint = make_lines_from_hint(item)
+      local lines_from_hint = make_lines_from_hint(item, _ctx)
       if lines_from_hint then
         count = count + 1
         vim.list_extend(lines, lines_from_hint)
